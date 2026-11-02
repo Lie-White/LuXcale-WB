@@ -1,5 +1,12 @@
 # LuXcale-WB
 
+> **Beta.** LuXcale-WB is being tested. Check its results yourself, and please tell us what breaks
+> or what is awkward: see [Feedback](#feedback). It has been checked on Amersham chemiluminescence
+> TIFFs so far; reports from other imagers are especially welcome.
+>
+> **베타 버전입니다.** 결과는 직접 확인하고 쓰시고, 문제나 불편한 점을 [피드백](#feedback)으로 알려 주세요.
+> 지금까지 Amersham 이미저의 화학발광 TIFF로 검증했고, 다른 이미저(ChemiDoc 등) 사용 후기를 특히 환영합니다.
+
 Western blot band quantification from the imager's raw 16-bit chemiluminescence TIFF,
 from the raw image to a normalised result, a graph and a publication figure. Windows.
 
@@ -61,6 +68,17 @@ uv run pytest
 Tests that need the lab's own blots are not part of this repository.
 `validation/` holds independent reference implementations and synthetic data with known answers
 used to check the measurements and statistics.
+
+## Feedback
+
+- **Bugs and odd results:** open an [issue](../../issues/new/choose) with the *Bug report* form
+  (version, imager, the steps, what you expected and what happened).
+- **Ideas:** use the *Feature request* form.
+- **Blot files:** do not attach unpublished data to a public issue; say in the form that you can
+  share one, and we will arrange a private copy.
+
+**피드백:** 버그·이상한 결과는 [Issues](../../issues/new/choose)의 *버그 신고* 양식으로, 원하는 기능은 *기능 제안* 양식으로 남겨 주세요.
+미발표 블롯 파일은 공개 이슈에 올리지 말고, 공유 가능하다고 체크해 주시면 따로 받을게요.
 
 ## No warranty
 

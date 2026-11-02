@@ -14,10 +14,19 @@ Every saved result's `settings.json` records the `app_version` that made it.
     their original method and give the same numbers
 
 ### Screen
-- **Default brightness:** the whole raw range (0–65,535); "Auto" still stretches the contrast
+- **Default brightness:** the whole raw range (0–65,535); "Auto" stretches the contrast,
+  "Original" brings back the whole range
+- **Brightness histogram:** the blot's values with two handles, dragged to set the screen range;
+  the number boxes follow
 - **Figure contrast separated:** ⑥ figure strips use their own automatic contrast, independent of the
   screen; "Same as screen" applies the current screen brightness
 - **Language button** moved to the top right
+
+### Updates
+- **New-version notice:** at start the installed program asks GitHub for the latest release; when
+  there is a newer one a "New version … – download" button appears at the top. It downloads the
+  installer, checks its size and SHA-256, and starts it (your settings and results stay). Nothing
+  about you or your blots is sent; without internet nothing is shown
 
 ### Size marks (kDa)
 - **Editing changed:** the "Click to mark" button is removed; marks are edited on the blot

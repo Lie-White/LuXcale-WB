@@ -1,0 +1,55 @@
+name: 버그 신고 / Bug report
+description: 프로그램이 멈추거나, 숫자·화면이 이상할 때 / The program fails, or numbers or the screen look wrong
+labels: ["bug", "beta"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        신고해 주셔서 고맙습니다. 아래 내용을 적어 주시면 원인을 찾기 쉬워요.
+        Thanks for reporting. The details below help find the cause.
+  - type: input
+    id: version
+    attributes:
+      label: 버전 / Version
+      description: 창 제목에 보이는 번호 (예 1.0.3) / The number in the window title (e.g. 1.0.3)
+      placeholder: "1.0.3"
+    validations:
+      required: true
+  - type: input
+    id: imager
+    attributes:
+      label: 이미저 / Imager
+      description: 블롯을 찍은 장비 (예 Amersham, ChemiDoc) / The machine that took the blot
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 한 일 / What you did
+      description: 어떤 순서로 무엇을 눌렀는지 / The steps, in order
+      placeholder: |
+        1. 블롯 열기…로 ___.tif 열기
+        2. 밴드 클릭해서 자동 인식
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 기대한 결과 / What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 실제 결과 / What happened
+      description: 오류 메시지, 이상한 숫자, 화면 캡처를 붙여 주세요 / Error messages, odd numbers, screenshots
+    validations:
+      required: true
+  - type: checkboxes
+    id: share
+    attributes:
+      label: 블롯 파일 / Blot file
+      description: 미발표 데이터는 올리지 마세요. 필요하면 따로 연락드릴게요. / Do not attach unpublished data; we can arrange a private copy.
+      options:
+        - label: 문제를 재현할 수 있는 블롯 파일을 공유할 수 있어요 (비공개 전달 가능) / I can share a blot that shows the problem (privately if needed)

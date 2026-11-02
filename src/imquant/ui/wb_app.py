@@ -3,7 +3,8 @@
 `launch` opens it the way the installed LuXcale.exe does: Korean unless the user switched, and the
 settings in the data folder (%LOCALAPPDATA%\\LuXcale when installed). `smoke` runs a saved WB
 settings.json without a window, to check an installed copy end to end. `main` is the command line
-(`python -m imquant.ui.wb_app`); it imports nothing from the confocal side (§4-57).
+(`python -m imquant.ui.wb_app`); it imports nothing from the confocal side (§4-57). The installed
+program says when GitHub has a newer version and can fetch it (§4-65).
 """
 
 import argparse
@@ -11,6 +12,8 @@ import csv
 import json
 import os
 from pathlib import Path
+import sys
+import threading
 
 import imquant
 from imquant import __version__
@@ -41,11 +44,13 @@ def _write(settings: dict) -> None:
     path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def window():
+def window(check_updates: bool | None = None):
     """The WB window with the language from settings (Korean by default) and a language button at
-    the top right, as in the main window (§4-58)."""
+    the top right, as in the main window (§4-58). `check_updates` (default: only when installed)
+    asks GitHub in the background for a newer version (§4-65)."""
+    from PySide6.QtCore import QObject, Signal
     from PySide6.QtWidgets import QSizePolicy, QWidget
-    from imquant.ui import i18n, widgets
+    from imquant.ui import i18n, updates, widgets
     from imquant.ui.wb_window import WBWindow
 
     i18n.set_language(_read().get("language", "ko"))
@@ -63,9 +68,90 @@ def window():
     spacer = QWidget()
     spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     bar.addWidget(spacer)
+    win.update_button = widgets.button("primary", text="")
+    win.update_button.setVisible(False)
+    win.update_button.clicked.connect(lambda: get_update(win))
+    win.update = None
+    bar.addWidget(win.update_button)
     bar.addWidget(lang)
     win.lang_button = lang
+    i18n.on_change(lambda: show_update(win, win.update))
+
+    class Found(QObject):  # carries the answer from the asking thread to the window
+        found = Signal(object)
+
+    win._found = Found()
+    win._found.found.connect(lambda update: show_update(win, update))
+    if getattr(sys, "frozen", False) if check_updates is None else check_updates:
+        threading.Thread(target=lambda: win._found.found.emit(updates.latest(__version__)), daemon=True).start()
     return win
+
+
+def show_update(win, update) -> None:
+    """The top bar's "New version … – download" button, or nothing when `update` is None."""
+    from imquant.ui import i18n
+
+    win.update = update
+    win.update_button.setVisible(update is not None)
+    if update is not None:
+        win.update_button.setText(i18n.tr("update.available").format(version=update.version))
+        win.update_button.setToolTip(i18n.tr("update.available.tip"))
+
+
+def run_installer(path: Path) -> None:
+    os.startfile(str(path))  # Windows: the installer asks before it installs
+
+
+def get_update(win, opener=None, background: bool = True) -> None:
+    """Download the newer installer with a progress bar; when its size and SHA-256 match, start it
+    and close LuXcale. Otherwise nothing runs and the Releases page opens."""
+    from PySide6.QtCore import QObject, Qt, QUrl, Signal
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
+    from imquant.ui import i18n, updates
+
+    update = win.update
+    if update is None:
+        return
+    if update.url is None or update.sha256 is None:
+        QDesktopServices.openUrl(QUrl(updates.PAGE))
+        return
+    dialog = QProgressDialog(i18n.tr("update.downloading").format(version=update.version), "", 0, 100, win)
+    dialog.setCancelButton(None)
+    dialog.setWindowModality(Qt.WindowModality.WindowModal)
+    dialog.setMinimumDuration(0)
+
+    class Progress(QObject):
+        moved = Signal(int)
+        done = Signal(object)
+
+    signals = Progress()
+    signals.moved.connect(dialog.setValue)
+
+    def finished(path) -> None:
+        dialog.close()
+        if path is None:
+            QMessageBox.information(win, i18n.tr("update.failed.title"), i18n.tr("update.failed"))
+            QDesktopServices.openUrl(QUrl(updates.PAGE))
+            return
+        run_installer(path)
+        win.close()
+        QApplication.quit()
+
+    signals.done.connect(finished)
+    win._download_signals = signals  # kept alive until the download ends
+    folder = data_dir() / "updates"
+    kwargs = {} if opener is None else {"opener": opener}
+
+    def work() -> None:
+        path = updates.download(update, folder, progress=lambda d, t: signals.moved.emit(int(100 * d / max(t, 1))),
+                                **kwargs)
+        signals.done.emit(path)
+
+    if background:
+        threading.Thread(target=work, daemon=True).start()
+    else:
+        work()
 
 
 def launch() -> int:
@@ -92,7 +178,7 @@ def smoke(settings_file: Path, out: Path) -> int:
 
     app = QApplication.instance() or QApplication([])
     settings = json.loads(Path(settings_file).read_text(encoding="utf-8"))
-    win = window()
+    win = window(check_updates=False)  # an install check never goes online (§4-65)
     for blot in settings["blots"]:
         if not win.open_blot(Path(blot["path"])):
             print(f"could not open {blot['path']}")

@@ -21,7 +21,8 @@ from PySide6.QtWidgets import (
 from imquant import __version__, wb, wbfigure, wbstats, xlsx
 from imquant.graphs import GraphStyle, dot_bar, preview
 from imquant.recommend import candidate_statistics, recommendations
-from imquant.ui import i18n, widgets
+from imquant.ui import i18n, theme, widgets
+from imquant.ui.histogram import HistogramStrip
 from imquant.ui.style_dialog import style_dialog
 
 LANE = QColor(0, 170, 220)
@@ -503,6 +504,13 @@ class _Blot:
     def auto_display(self) -> None:
         self.set_display(*self.auto_range())
 
+    def histogram(self) -> np.ndarray:
+        """Counts of the (turned) blot's values in 256 bins over 0–65,535 (§4-63)."""
+        if getattr(self, "_hist", (None,))[0] != self.angle:
+            counts, _ = np.histogram(self.blot.image, bins=256, range=(0.0, self.blot.saturation + 1))
+            self._hist = (self.angle, counts)
+        return self._hist[1]
+
     def set_display(self, lo: float, hi: float) -> None:
         """Display contrast only (docs/PLAN.md §4-24 MB9): raw `lo` shows white, `hi` black.
         The numbers always come from the raw image."""
@@ -637,6 +645,10 @@ class WBWindow(QMainWindow):
         i18n.bind(contrast_label, "wb.contrast")
         contrast_label.setToolTip(i18n.tr("wb.contrast.tip"))
         body.addWidget(contrast_label)
+        # The blot's values with the two ends of the screen range, dragged like a confocal channel (§4-63).
+        self.display_hist = HistogramStrip(theme.ACCENT, inverted=True)
+        self.display_hist.rangeChanged.connect(self._dragged_display)
+        body.addWidget(self.display_hist)
         row = QHBoxLayout()
         self.display_lo, self.display_hi = QSpinBox(), QSpinBox()
         for spin in (self.display_lo, self.display_hi):
@@ -646,14 +658,17 @@ class WBWindow(QMainWindow):
             spin.valueChanged.connect(lambda _: self.set_display(self.display_lo.value(), self.display_hi.value()))
             row.addWidget(spin, 1)
         body.addLayout(row)
-        row = QHBoxLayout()  # "Auto" on its own row: the two boxes need their room for "65535" (§4-59)
+        row = QHBoxLayout()  # "Auto" and "Original" on their own row: the boxes need their room for "65535" (§4-59, §4-62)
         self.display_auto = widgets.button("action", "wb.contrast_auto")
         self.display_auto.clicked.connect(self.auto_display)
+        self.display_full = widgets.button("action", "wb.contrast_full", tooltip=i18n.tr("wb.contrast_full.tip"))
+        self.display_full.clicked.connect(self.full_display)
         self.marker_toggle = widgets.button("toggle", "wb.marker", tooltip=i18n.tr("wb.marker.tip"))
         self.marker_toggle.toggled.connect(lambda _: self._draw())
-        row.addWidget(self.display_auto)
-        row.addWidget(self.marker_toggle, 1)
+        row.addWidget(self.display_auto, 1)
+        row.addWidget(self.display_full, 1)
         body.addLayout(row)
+        body.addWidget(self.marker_toggle)
         # Ladder marks (§4-37): the ladder only shows in the Marker picture, so show it and
         # Ctrl+click each ladder band; marks are dragged, removed and edited on the blot (§4-59).
         body = self._step(lay, "wb.ladder")
@@ -676,6 +691,25 @@ class WBWindow(QMainWindow):
             return
         b.set_display(lo, hi)
         self._load_widgets()
+
+    def _dragged_display(self, lo: float, hi: float) -> None:
+        """A handle of the histogram moved: the picture and the number boxes follow, nothing else
+        is redone (it runs on every mouse move)."""
+        b = self.current()
+        if b is None:
+            return
+        b.set_display(lo, hi)
+        for spin, v in ((self.display_lo, lo), (self.display_hi, hi)):
+            spin.blockSignals(True)
+            spin.setValue(int(round(v)))
+            spin.blockSignals(False)
+        self._draw()
+
+    def full_display(self) -> None:
+        """The whole raw range on screen again, as when the blot was opened (§4-62)."""
+        b = self.current()
+        if b is not None:
+            self.set_display(0.0, b.blot.saturation)
 
     def auto_display(self) -> None:
         b = self.current()
@@ -1739,9 +1773,15 @@ class WBWindow(QMainWindow):
             self.same_gel_box.setChecked(b.same_gel)
             self.display_lo.setValue(int(round(b.display[0])))
             self.display_hi.setValue(int(round(b.display[1])))
+            self.display_hist.set_data(b.histogram(), b.blot.saturation)
+            self.display_hist.set_range(*b.display)
             self.tilt_spin.setValue(b.angle)
         self.win_remove.setEnabled(b is not None and len(b.windows) > 1)
         self.close_button.setEnabled(b is not None)
+        for button in (self.display_auto, self.display_full, self.display_hist):
+            button.setEnabled(b is not None)
+        if b is None:
+            self.display_hist.set_data(np.zeros(256), 65535.0)
         self.close_all_button.setEnabled(bool(self.blots))
         for w in (self.tilt_spin, self.tilt_auto, self.tilt_points):
             w.setEnabled(b is not None)

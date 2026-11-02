@@ -1,0 +1,22 @@
+name: 기능 제안 / Feature request
+description: 있으면 좋겠는 기능이나 불편한 점 / Something missing or awkward to use
+labels: ["enhancement", "beta"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 불편한 점 / What is hard now
+      description: 지금 어떤 작업이 어렵거나 오래 걸리는지 / The task that is hard or slow today
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 원하는 방식 / What you would like
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 버전 / Version
+      placeholder: "1.0.3"
