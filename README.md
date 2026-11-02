@@ -19,6 +19,8 @@ The screen contrast only changes what you see. Numbers always come from the raw 
 > **한국어 요약:** 웨스턴 블롯 원본 TIFF로 밴드를 정량해서 정규화 결과, 그래프, 논문용 그림까지 만드는 Windows 프로그램입니다.
 > 화면 밝기는 화면에만 적용되고, 숫자는 항상 원본 이미지에서 계산합니다. 자동으로 정해진 값은 꼭 직접 확인하고 쓰세요.
 > 새 버전은 새 설치 파일을 기존 버전 위에 그대로 설치하면 되고, 설정과 저장한 결과는 남습니다. 버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)에 있습니다.
+> Test video : https://youtu.be/RjKfseLv0yM
+
 
 ## What it does
 
