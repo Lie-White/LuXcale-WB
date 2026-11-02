@@ -7,6 +7,11 @@ window's columns are summed into a vertical profile, a straight baseline joining
 two ends is subtracted, and the rest is added up (the idea of ImageJ's Gel Analyzer). A window
 may hold several bands (p44/p42): the total uses the window's own baseline, and each band is
 the part of the baseline-subtracted profile on its side of a split row (a perpendicular drop).
+
+Two baselines (§4-60): "ends", the straight line above, and "hull", the lower convex hull of the
+profile, which never rises above it, so no row and no band can come out negative even when a
+window's end touches another band. The WB window uses "hull"; settings saved without a
+"background" (before §4-60) are re-run with "ends" and give the same numbers as before.
 """
 
 from dataclasses import dataclass, field
@@ -17,6 +22,7 @@ import numpy as np
 import tifffile
 
 END_ROWS = 3  # rows averaged at each end of a window for the baseline's end values
+BACKGROUNDS = ("ends", "hull")
 
 
 @dataclass
@@ -141,9 +147,26 @@ def baseline(p: np.ndarray) -> np.ndarray:
     return left + (right - left) * (y - a) / (b - a)
 
 
-def measure(blot: Blot, lanes: Lanes, windows: list[Window]) -> list[dict]:
+def hull_baseline(p: np.ndarray) -> np.ndarray:
+    """The lower convex hull of the points (row, p[row]), joined by straight lines: the highest
+    convex line that is nowhere above the profile (§4-60)."""
+    p = np.asarray(p, np.float64)
+    low: list[int] = []
+    for i in range(len(p)):  # Andrew's monotone chain, lower half
+        while len(low) >= 2 and ((low[-1] - low[-2]) * (p[i] - p[low[-2]])
+                                 - (p[low[-1]] - p[low[-2]]) * (i - low[-2])) <= 0:
+            low.pop()
+        low.append(i)
+    line = np.interp(np.arange(len(p)), low, p[low])
+    return np.minimum(line, p)  # rounding in the interpolation never lifts it above a row
+
+
+def measure(blot: Blot, lanes: Lanes, windows: list[Window], background: str = "ends") -> list[dict]:
     """One row per lane × band, plus the window total when it holds more than one band. A window
-    with its own lanes is measured in its own boxes (§4-51); every window has the blot's lane count."""
+    with its own lanes is measured in its own boxes (§4-51); every window has the blot's lane count.
+    `background`: "ends" (the straight line between the window's ends) or "hull" (§4-60)."""
+    if background not in BACKGROUNDS:
+        raise ValueError(f"unknown background {background!r}")
     for w in windows:
         if w.lanes is not None and w.lanes.count != lanes.count:
             raise ValueError(f"band {w.total_name} has {w.lanes.count} lanes, its blot {lanes.count}")
@@ -155,7 +178,7 @@ def measure(blot: Blot, lanes: Lanes, windows: list[Window]) -> list[dict]:
             if x0 < 0 or x1 > blot.image.shape[1]:
                 raise ValueError(f"lane {i + 1} runs off the image")
             p = profile(blot.image, own, i, w)
-            signal = p - baseline(p)
+            signal = p - (hull_baseline(p) if background == "hull" else baseline(p))
             clipped = blot.image >= blot.saturation if blot.clipped is None else blot.clipped
             saturated = bool(clipped[w.top:w.bottom, x0:x1].any())
             edges = [0] + [s - w.top for s in w.splits] + [len(p)]
@@ -222,7 +245,7 @@ def run(settings: dict) -> tuple[list[dict], list[str]]:
         if i not in measured:
             b = blots[i]
             raw = turned(read_blot(Path(b["path"])), b.get("angle", 0.0))  # level first (§4-43)
-            measured[i] = measure(raw, Lanes(**b["lanes"]), windows_of(b))
+            measured[i] = measure(raw, Lanes(**b["lanes"]), windows_of(b), settings.get("background", "ends"))
         return measured[i]
 
     t = settings["target"]
@@ -272,7 +295,7 @@ def run_experiments(settings: dict) -> tuple[list[dict], list[str]]:
         if not e.get("target") or not e.get("loading"):
             warnings.append(f"{e['name']}: pick its target band and loading control again (left out)")
             continue
-        got, said = run({"blots": settings["blots"], **e})
+        got, said = run({"blots": settings["blots"], "background": settings.get("background", "ends"), **e})
         rows += [{"experiment": e["name"], **r} for r in got]
         warnings += [f"{e['name']}: {w}" if len(every) > 1 else w for w in said]
     return rows, warnings

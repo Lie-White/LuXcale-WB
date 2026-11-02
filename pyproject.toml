@@ -1,6 +1,6 @@
 [project]
 name = "imquant"
-version = "1.0.2"
+version = "1.0.3"
 description = "Image quantification to publication-ready graphs"
 requires-python = ">=3.12,<3.13"
 dependencies = [

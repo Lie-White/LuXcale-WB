@@ -42,7 +42,9 @@ def _write(settings: dict) -> None:
 
 
 def window():
-    """The WB window with the language from settings (Korean by default) and a language button."""
+    """The WB window with the language from settings (Korean by default) and a language button at
+    the top right, as in the main window (§4-58)."""
+    from PySide6.QtWidgets import QSizePolicy, QWidget
     from imquant.ui import i18n, widgets
     from imquant.ui.wb_window import WBWindow
 
@@ -55,7 +57,13 @@ def window():
         _write({**_read(), "language": i18n.language()})
 
     lang.clicked.connect(switch)
-    win.statusBar().addPermanentWidget(lang)
+    bar = win.addToolBar("language")
+    bar.setMovable(False)
+    bar.toggleViewAction().setVisible(False)  # not hidden from the right-click menu
+    spacer = QWidget()
+    spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    bar.addWidget(spacer)
+    bar.addWidget(lang)
     win.lang_button = lang
     return win
 

@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
-    QAbstractSpinBox, QApplication, QDialog, QFormLayout, QListWidgetItem, QMainWindow, QMessageBox,
+    QAbstractSpinBox, QApplication, QDialog, QFormLayout, QListWidgetItem, QMainWindow, QMessageBox, QStyle, QStyleOptionSpinBox,
     QScrollArea, QSizePolicy, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -51,7 +51,9 @@ class _BlotView(QWidget):
         self.fit_mode = False
         self.points_clicked = None  # while set, clicks are collected for levelling (§4-27)
         self.points: list[tuple[float, float]] = []
-        self.ladder_clicked = None  # while set, a click places a ladder mark (§4-37)
+        # Ladder marks (§4-37, §4-59): Ctrl+click adds one, a drag moves it, a right click removes
+        # it, a double click edits its kDa; each callback gets the mark's index or position.
+        self.mark_added = self.mark_moved = self.mark_removed = self.mark_edit = None
         self.marker: QImage | None = None  # the colour Marker picture, shown instead of the blot
         self.marks: list = []  # ladder marks [x, y, kDa] of the shown blot
         self.grey: np.ndarray | None = None
@@ -205,16 +207,36 @@ class _BlotView(QWidget):
                "first": Qt.CursorShape.SizeAllCursor, "last": Qt.CursorShape.SizeAllCursor,
                "all": Qt.CursorShape.SizeAllCursor, "pan": Qt.CursorShape.OpenHandCursor}
 
+    def hit_mark(self, wx: float, wy: float) -> int | None:
+        """The ladder mark whose line is under widget (wx, wy)."""
+        s = self.scale()
+        for i, (x, y, _) in enumerate(self.marks):
+            px, py = self.to_widget(x, y)
+            if abs(wy - py) <= GRAB and abs(wx - px) <= 25 * s + GRAB:
+                return i
+        return None
+
     def mousePressEvent(self, event) -> None:
-        if self.image is None or event.button() != Qt.MouseButton.LeftButton:
+        if self.image is None:
+            return
+        p = event.position()
+        if event.button() == Qt.MouseButton.RightButton:
+            i = self.hit_mark(p.x(), p.y())
+            if i is not None and self.mark_removed is not None:
+                self.mark_removed(i)
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
             return
         self.setFocus()
-        p = event.position()
         if self.fit_mode and self.fit_clicked is not None:
             self.fit_clicked(*self.to_image(p.x(), p.y()))
             return
-        if self.ladder_clicked is not None:
-            self.ladder_clicked(*self.to_image(p.x(), p.y()))
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier and self.mark_added is not None:
+            self.mark_added(*self.to_image(p.x(), p.y()))
+            return
+        i = self.hit_mark(p.x(), p.y()) if self.points_clicked is None else None
+        if i is not None:
+            self.drag = {"what": ("mark", i), "start": (p.x(), p.y()), "mark": list(self.marks[i])}
             return
         if self.points_clicked is not None:
             self.points.append(self.to_image(p.x(), p.y()))
@@ -237,13 +259,22 @@ class _BlotView(QWidget):
             return
         p = event.position()
         if self.drag is None:
-            self.setCursor(self.CURSORS[self.hit(p.x(), p.y())[0]])
+            if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier:
+                self.setCursor(Qt.CursorShape.CrossCursor)  # Ctrl+click adds a mark
+            elif self.hit_mark(p.x(), p.y()) is not None:
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
+            else:
+                self.setCursor(self.CURSORS[self.hit(p.x(), p.y())[0]])
             return
         d = self.drag
         wdx, wdy = p.x() - d["start"][0], p.y() - d["start"][1]
         s = self.scale()
         dx, dy = wdx / s, wdy / s
         what = d["what"]
+        if what[0] == "mark":
+            self.marks[what[1]] = [d["mark"][0] + dx, d["mark"][1] + dy, d["mark"][2]]
+            self.update()
+            return
         if what[0] == "pan":
             self.centre = (d["centre"][0] - dx, d["centre"][1] - dy)
             self.update()
@@ -308,11 +339,18 @@ class _BlotView(QWidget):
         if self.drag is None:
             return
         d, self.drag = self.drag, None
+        if d["what"][0] == "mark":
+            i = d["what"][1]
+            if self.marks[i] != d["mark"] and self.mark_moved is not None:
+                self.mark_moved(i, *self.marks[i][:2])
+            return
         if d["what"][0] != "pan" and (self.lanes != d["lanes"] or self.windows != d["windows"]):
             self.committed(self.lanes, self.windows, self.selected)
 
     def keyPressEvent(self, event) -> None:
         """Arrows move the last thing clicked by 1 image px, Shift+arrows by 10."""
+        if event.key() == Qt.Key.Key_Control and self.image is not None:
+            self.setCursor(Qt.CursorShape.CrossCursor)
         arrows = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
         if event.key() not in arrows or self.last is None or self.lanes is None:
             return super().keyPressEvent(event)
@@ -331,7 +369,17 @@ class _BlotView(QWidget):
         self.committed(self.lanes, self.windows, self.selected)
 
     def mouseDoubleClickEvent(self, event) -> None:
+        p = event.position()
+        i = self.hit_mark(p.x(), p.y())
+        if i is not None and self.mark_edit is not None:
+            self.mark_edit(i)
+            return
         self.fit()
+
+    def keyReleaseEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Control:
+            self.unsetCursor()
+        super().keyReleaseEvent(event)
 
     def wheelEvent(self, event) -> None:
         if self.image is None:
@@ -409,7 +457,7 @@ class _Blot:
         self.marker_path = marker_image(path)
         self._marker: QImage | None = None
         self._turned_marker: tuple | None = None  # (angle, picture turned by it)
-        self.auto_display()
+        self.set_display(0.0, blot.saturation)  # the whole raw range, as a picture viewer shows it (§4-59)
 
     def marker(self) -> QImage | None:
         """The colour Marker picture (same pixel grid as the raw image, §4-37), loaded once and
@@ -444,9 +492,16 @@ class _Blot:
         """Raw (x, y) points (ladder marks) where they show on the turned blot."""
         return wbfigure.rotate_points(points, self.angle, self.raw.image.shape)
 
+    def auto_range(self) -> tuple[float, float]:
+        """The 1st and 99.5th percentiles of the (turned) blot: "Auto" on screen, and a figure
+        strip's contrast until it gets its own (§4-59)."""
+        if getattr(self, "_auto", (None,))[0] != self.angle:
+            lo, hi = np.percentile(self.blot.image, (1, 99.5))
+            self._auto = (self.angle, (float(lo), float(hi)))
+        return self._auto[1]
+
     def auto_display(self) -> None:
-        lo, hi = np.percentile(self.blot.image, (1, 99.5))
-        self.set_display(float(lo), float(hi))
+        self.set_display(*self.auto_range())
 
     def set_display(self, lo: float, hi: float) -> None:
         """Display contrast only (docs/PLAN.md §4-24 MB9): raw `lo` shows white, `hi` black.
@@ -517,6 +572,8 @@ class WBWindow(QMainWindow):
         split = widgets.Splitter(Qt.Orientation.Horizontal)
         split.addWidget(self._build_blots())
         self.view = _BlotView(self._dragged, self.fit_at)
+        self.view.mark_added, self.view.mark_moved = self.add_ladder_mark, self.move_ladder_mark
+        self.view.mark_removed, self.view.mark_edit = self.remove_ladder_mark, self.edit_ladder_mark
         split.addWidget(self.view)
         split.addWidget(self._build_settings())
         split.setSizes([260, 640, 480])
@@ -529,6 +586,14 @@ class WBWindow(QMainWindow):
         for spin in self.findChildren(QAbstractSpinBox):
             widest = max((spin.textFromValue(v) for v in (spin.minimum(), spin.maximum())), key=len)
             spin.setMinimumWidth(spin.fontMetrics().horizontalAdvance(widest + spin.suffix()) + 34)
+        # The brightness boxes really show their widest value ("65535" from the start, §4-59), so
+        # they get the arrows' real width from the style (48 px side by side here, not 34).
+        for spin in (self.display_lo, self.display_hi):
+            opt = QStyleOptionSpinBox()
+            spin.initStyleOption(opt)
+            arrows = sum(spin.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, opt, part, spin).width()
+                         for part in (QStyle.SubControl.SC_SpinBoxUp, QStyle.SubControl.SC_SpinBoxDown))
+            spin.setMinimumWidth(spin.fontMetrics().horizontalAdvance("65535") + arrows + 16)
         self._load_widgets()
         i18n.on_change(self._retranslate)
 
@@ -580,24 +645,22 @@ class WBWindow(QMainWindow):
             spin.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             spin.valueChanged.connect(lambda _: self.set_display(self.display_lo.value(), self.display_hi.value()))
             row.addWidget(spin, 1)
+        body.addLayout(row)
+        row = QHBoxLayout()  # "Auto" on its own row: the two boxes need their room for "65535" (§4-59)
         self.display_auto = widgets.button("action", "wb.contrast_auto")
         self.display_auto.clicked.connect(self.auto_display)
-        row.addWidget(self.display_auto)
-        body.addLayout(row)
         self.marker_toggle = widgets.button("toggle", "wb.marker", tooltip=i18n.tr("wb.marker.tip"))
         self.marker_toggle.toggled.connect(lambda _: self._draw())
-        body.addWidget(self.marker_toggle)
-        # Ladder marks (§4-37): the ladder only shows in the Marker picture, so show it, click
-        # each ladder band, type its kDa.
+        row.addWidget(self.display_auto)
+        row.addWidget(self.marker_toggle, 1)
+        body.addLayout(row)
+        # Ladder marks (§4-37): the ladder only shows in the Marker picture, so show it and
+        # Ctrl+click each ladder band; marks are dragged, removed and edited on the blot (§4-59).
         body = self._step(lay, "wb.ladder")
-        row = QHBoxLayout()
-        self.ladder_mode = widgets.button("toggle", "wb.ladder_mode", tooltip=i18n.tr("wb.ladder_mode.tip"))
-        self.ladder_mode.toggled.connect(self._ladder_mode)
+        body.addWidget(self._hint("wb.ladder_hint"))
         self.ladder_remove = widgets.button("action", "wb.ladder_remove")
         self.ladder_remove.clicked.connect(self.remove_ladder_mark)
-        row.addWidget(self.ladder_mode, 1)
-        row.addWidget(self.ladder_remove)
-        body.addLayout(row)
+        body.addWidget(self.ladder_remove)
         self.ladder_table = QTableWidget(0, 2)
         self.ladder_table.setMinimumHeight(110)
         self.ladder_table.verticalHeader().setVisible(False)
@@ -970,10 +1033,10 @@ class WBWindow(QMainWindow):
         return angle
 
     def strip_contrast(self, blot, k: int) -> tuple[float, float]:
-        """The strip's (white, black) raw values: its own, or its blot's screen contrast (§4-30)."""
+        """The strip's (white, black) raw values: its own, or its blot's auto range (§4-30, §4-59)."""
         meta = blot.figure[k]
-        return (blot.display[0] if meta["lo"] is None else meta["lo"],
-                blot.display[1] if meta["hi"] is None else meta["hi"])
+        lo, hi = blot.auto_range()
+        return (lo if meta["lo"] is None else meta["lo"], hi if meta["hi"] is None else meta["hi"])
 
     def set_strip_contrast(self, lo: float, hi: float) -> None:
         """The picked strip's own linear contrast; other strips and the screen are untouched."""
@@ -989,7 +1052,7 @@ class WBWindow(QMainWindow):
         if key is None:
             return
         blot, k = key
-        blot.figure[k].update(lo=None, hi=None)
+        blot.figure[k].update(lo=float(blot.display[0]), hi=float(blot.display[1]))  # the screen's, now
         self._load_strip()
         self._make_figure()
 
@@ -1033,26 +1096,43 @@ class WBWindow(QMainWindow):
 
     # ---- ladder marks (§4-37) -----------------------------------------------------------------
 
-    def _ladder_mode(self, on: bool) -> None:
-        self.view.ladder_clicked = self.add_ladder_mark if on else None
-        self.view.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
-
     def add_ladder_mark(self, x: float, y: float, kda: str = "") -> None:
-        """A ladder mark clicked at (x, y) on the shown blot, kept in raw pixels (§4-43); its kDa
-        is typed in the table."""
+        """A ladder mark Ctrl+clicked at (x, y) on the shown blot, kept in raw pixels (§4-43);
+        without a kDa its table cell opens for typing (§4-59)."""
         b = self.current()
         if b is None:
             return
         x, y = b.to_raw([(x, y)])[0]
-        b.ladder.append([round(float(x), 1), round(float(y), 1), str(kda)])
+        mark = [round(float(x), 1), round(float(y), 1), str(kda)]
+        b.ladder.append(mark)
+        b.ladder.sort(key=lambda m: m[1])
+        self._ladder_changed(b)
+        if not kda:
+            self.edit_ladder_mark(b.ladder.index(mark))
+
+    def move_ladder_mark(self, i: int, x: float, y: float) -> None:
+        """Mark i dragged to (x, y) on the shown blot."""
+        b = self.current()
+        if b is None or not 0 <= i < len(b.ladder):
+            return
+        x, y = b.to_raw([(x, y)])[0]
+        b.ladder[i][:2] = [round(float(x), 1), round(float(y), 1)]
         b.ladder.sort(key=lambda m: m[1])
         self._ladder_changed(b)
 
-    def remove_ladder_mark(self) -> None:
-        b, row = self.current(), self.ladder_table.currentRow()
+    def remove_ladder_mark(self, i: int | None = None) -> None:
+        """Mark i (right click on the blot), or the one picked in the table."""
+        b = self.current()
+        row = self.ladder_table.currentRow() if i is None else i
         if b is not None and 0 <= row < len(b.ladder):
             del b.ladder[row]
             self._ladder_changed(b)
+
+    def edit_ladder_mark(self, i: int) -> None:
+        """Open mark i's kDa cell for typing."""
+        if 0 <= i < self.ladder_table.rowCount():
+            self.ladder_table.setCurrentCell(i, 0)
+            self.ladder_table.editItem(self.ladder_table.item(i, 0))
 
     def _ladder_edited(self, item) -> None:
         b = self.current()
@@ -1761,7 +1841,8 @@ class WBWindow(QMainWindow):
         """Everything needed to re-run the numbers (saved next to the results). The current
         experiment is also at the top level, so one experiment reads like older settings."""
         current = self._current_experiment()
-        out = {"blots": [b.settings() for b in self.blots], **{k: v for k, v in current.items() if k != "name"}}
+        out = {"blots": [b.settings() for b in self.blots], "background": "hull",  # never negative (§4-60)
+               **{k: v for k, v in current.items() if k != "name"}}
         if len(self.experiments) > 1:
             out["experiments"] = self.experiments_now()
         return out

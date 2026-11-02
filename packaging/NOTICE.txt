@@ -1,5 +1,5 @@
-LuXcale 1.0.2 — Western blot quantification (lab release)
-LuXcale 1.0.2 — 웨스턴 블롯 정량 (연구실 배포판)
+LuXcale 1.0.3 — Western blot quantification (lab release)
+LuXcale 1.0.3 — 웨스턴 블롯 정량 (연구실 배포판)
 
 For use inside the lab. Results come with no warranty: check every automatic choice
 (lanes, band windows, the blots "Add experiment" picks) before you use the numbers.

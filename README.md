@@ -14,8 +14,9 @@ The screen contrast only changes what you see. Numbers always come from the raw 
 - Opens the raw TIFF, not a screenshot or JPEG; refuses the colorimetric membrane photo
 - Levels a tilted blot before measuring; saturated pixels stay flagged after the turn
 - Lane boxes: click a band to auto-detect, then drag; each band area of a blot can have its own boxes
-- Band intensity = the lane's row profile minus a straight background line through the area's ends;
-  touching bands (e.g. p44/p42) can be split into separate rows
+- Band intensity = the lane's row profile minus the background, the lowest line that stays under the
+  profile (its lower convex hull), so a value can never be negative; touching bands (e.g. p44/p42)
+  can be split into separate rows
 - Target ÷ loading control, relative to a reference group (= 1)
 - Repeated experiments: each normalised on its own; paired t-test (2 groups) or repeated-measures
   ANOVA with Holm-adjusted pairwise tests (3 or more)
