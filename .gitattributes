@@ -1,0 +1,5 @@
+validation/** text eol=lf
+validation/stats-reference/reference.json -text
+validation/stats-reference/anova_reference.json -text
+validation/**/*.gz binary
+validation/**/*.png binary

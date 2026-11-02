@@ -1,0 +1,28 @@
+# Downloaded tools and environments: recreate with tools\uv.cmd sync
+/.venv/
+/tools/python/
+/tools/uv-cache/
+/tools/uv/
+/tools/download/
+/tools/bin/
+__pycache__/
+.pytest_cache/
+
+# Research images stay out of git (user data, large).
+/samples/
+# Inspection snapshot
+/docs/.outside-snapshot.json
+/tools/mplconfig/
+/output/
+/.worktrees/
+/tools/appdata/
+/docs/.outside-*
+/docs/.napari-*
+/docs/.qt-*
+# Synthetic example images written by validation/synthetic/export_examples.py
+/validation/synthetic/out/
+/LuXcale*.lnk
+/validation/.pytest-tmp/
+/tools/innosetup/
+# Public repository written by scripts/export_public.py (its own history)
+/public/

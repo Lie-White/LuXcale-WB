@@ -1,0 +1,15 @@
+LuXcale 1.0.2 — Western blot quantification (lab release)
+LuXcale 1.0.2 — 웨스턴 블롯 정량 (연구실 배포판)
+
+For use inside the lab. Results come with no warranty: check every automatic choice
+(lanes, band windows, the blots "Add experiment" picks) before you use the numbers.
+연구실 안에서 쓰기 위한 프로그램입니다. 결과에 대한 보증은 없습니다. 숫자를 쓰기 전에
+자동으로 정해진 것(레인, 밴드 창, "실험 추가"가 고른 블롯)을 꼭 확인하세요.
+
+Settings are kept in %LOCALAPPDATA%\LuXcale. Uninstalling leaves them and your saved results.
+설정은 %LOCALAPPDATA%\LuXcale 에 저장됩니다. 제거해도 설정과 저장한 결과는 남습니다.
+
+Third-party software bundled with LuXcale keeps its own licence; the texts are in the
+"licenses" folder next to LuXcale.exe. Qt for Python (PySide6) is used under the GNU LGPL
+v3: its libraries are separate files in this folder and can be replaced by the user.
+함께 들어 있는 다른 소프트웨어의 라이선스 원문은 LuXcale.exe 옆 "licenses" 폴더에 있습니다.
