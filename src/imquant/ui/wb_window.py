@@ -6,12 +6,13 @@ from dataclasses import asdict, replace
 from datetime import datetime
 import csv
 import json
+import math
 from pathlib import Path
 import re
 
 import numpy as np
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap
+from PySide6.QtCore import QPointF, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
     QAbstractSpinBox, QApplication, QDialog, QFormLayout, QListWidgetItem, QMainWindow, QMessageBox, QStyle, QStyleOptionSpinBox,
@@ -32,6 +33,7 @@ RESULT_COLUMNS = ("lane", "sample", "group", "replicate", "target", "loading", "
 
 
 GRAB = 6  # widget px: how close the mouse must be to a line or edge to grab it
+HANDLE = 26  # widget px from a band area's last lane to its rotate handle (§4-69)
 AXIS_LOCK = 5  # widget px a drag inside a lane moves before its axis (lanes or window) is fixed
 LANE_KINDS = ("first", "last", "all")
 
@@ -131,31 +133,92 @@ class _BlotView(QWidget):
             painter.setPen(lane_pen)
             for i in range(lanes.count):
                 a, b = lanes.columns(i)
-                painter.drawRect(a, w.top, b - a, w.bottom - w.top)
+                if w.angle:
+                    corners = self.from_area(k, [(a, w.top), (b, w.top), (b, w.bottom), (a, w.bottom)])
+                    painter.drawPolygon(QPolygonF([QPointF(*c) for c in corners]))
+                else:
+                    painter.drawRect(a, w.top, b - a, w.bottom - w.top)
             split_pen = QPen(SPLIT, 1.5)
             split_pen.setCosmetic(True)
             painter.setPen(split_pen)
             left, right = self.span(k)
             for y in w.splits:
-                painter.drawLine(left, y, right, y)
+                (x1, y1), (x2, y2) = self.from_area(k, [(left, y), (right, y)])
+                painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
         painter.resetTransform()
+        if 0 <= self.selected < len(self.windows):  # the picked area's rotate handle (§4-69)
+            k = self.selected
+            (ex, ey), (hx, hy) = (self.to_widget(*p) for p in
+                                  (self.from_area(k, [(self.span(k)[1], (self.windows[k].top + self.windows[k].bottom) / 2)])[0],
+                                   self.handle_of(k)))
+            handle_pen = QPen(LANE, 1.5)
+            painter.setPen(handle_pen)
+            painter.drawLine(QPointF(ex, ey), QPointF(hx, hy))
+            painter.setBrush(QColor(255, 255, 255))
+            painter.setPen(QPen(LANE, 2))
+            painter.drawEllipse(QPointF(hx, hy), 6, 6)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(MARK)
         for x, y, kda in self.marks:
             px, py = self.to_widget(x - 25, y)
             painter.drawText(int(px) - 40, int(py) - 6, 36, 14, Qt.AlignmentFlag.AlignRight, f"{kda}" if kda else "?")
         painter.setPen(LANE)
         for k, w in enumerate(self.windows):
-            px, py = self.to_widget(self.span(k)[1], w.top)
-            painter.drawText(int(px) + 4, int(py) + 12, ", ".join(w.names))
+            px, py = self.to_widget(*self.from_area(k, [(self.span(k)[1], w.top)])[0])
+            # above the area's top right corner, clear of the rotate handle half way down (§4-69)
+            painter.drawText(int(px) + 4, int(py) - 4, ", ".join(w.names))
         if self.windows:
             k = min(range(len(self.windows)), key=lambda j: self.windows[j].top)
             for i in range(self.lanes.count):
-                px, py = self.to_widget(self.lanes_of(k).columns(i)[0], self.windows[k].top)
+                px, py = self.to_widget(*self.from_area(k, [(self.lanes_of(k).columns(i)[0], self.windows[k].top)])[0])
                 painter.drawText(int(px) + 2, int(py) - 4, str(i + 1))
 
     def lanes_of(self, k: int) -> wb.Lanes:
         """Window k's lane boxes: its own (§4-51), else the blot's."""
         return self.windows[k].lanes or self.lanes
+
+    def to_area(self, k: int, x: float, y: float) -> tuple[float, float]:
+        """A shown image point in window k's own frame: the blot turned by its lean too (§4-67)."""
+        lean = self.windows[k].angle
+        if not lean:
+            return x, y
+        p = wbfigure.rotate_points([(x, y)], lean, self.grey.shape)[0]
+        return float(p[0]), float(p[1])
+
+    def from_area(self, k: int, points) -> np.ndarray:
+        """Points of window k's frame where they show on the blot."""
+        points = np.asarray(points, np.float64).reshape(-1, 2)
+        lean = self.windows[k].angle
+        return points if not lean else wbfigure.rotate_points(points, -lean, self.grey.shape)
+
+    def centre_of(self, k: int) -> np.ndarray:
+        """Window k's middle where it shows on the blot."""
+        left, right = self.span(k)
+        w = self.windows[k]
+        return self.from_area(k, [((left + right) / 2, (w.top + w.bottom) / 2)])[0]
+
+    def handle_of(self, k: int) -> np.ndarray:
+        """Where window k's rotate handle shows: past its last lane, half way down (§4-69)."""
+        w = self.windows[k]
+        return self.from_area(k, [(self.span(k)[1] + HANDLE / self.scale(), (w.top + w.bottom) / 2)])[0]
+
+    def releaned(self, k: int, angle: float, lanes: wb.Lanes, windows: list) -> tuple:
+        """(lanes, windows) with window k leaning by `angle`, its middle where it shows now
+        (§4-69): its rows and lanes move in its new frame to stay put on the blot."""
+        old = windows[k]
+        own = old.lanes or lanes
+        centre = self.centre_of(k)
+        new = wbfigure.rotate_points([centre], angle, self.grey.shape)[0] if angle else centre
+        left, right = self.span(k)
+        dx = float(new[0] - (left + right) / 2)
+        dy = int(round(float(new[1] - (old.top + old.bottom) / 2)))
+        moved = replace(own, first=own.first + dx, last=own.last + dx)
+        window = replace(old, angle=round(float(angle), 2), top=old.top + dy, bottom=old.bottom + dy,
+                         splits=[s + dy for s in old.splits], lanes=None)
+        if len(windows) == 1:
+            return moved, [window]
+        window = replace(window, lanes=None if moved == lanes else moved)
+        return lanes, [window if j == k else other for j, other in enumerate(windows)]
 
     def span(self, k: int) -> tuple[int, int]:
         """Window k's columns from its first lane's left edge to its last lane's right edge."""
@@ -169,25 +232,31 @@ class _BlotView(QWidget):
         "pan" ends with the index of its window."""
         if self.lanes is None or not self.windows:
             return ("pan",)
-        x, y = self.to_image(wx, wy)
+        if 0 <= self.selected < len(self.windows):  # the picked area's rotate handle first (§4-69)
+            hx, hy = self.to_widget(*self.handle_of(self.selected))
+            if math.hypot(wx - hx, wy - hy) <= GRAB + 4:
+                return ("rotate", self.selected)
+        shown = self.to_image(wx, wy)
+        at = [self.to_area(k, *shown) for k in range(len(self.windows))]  # each window's frame (§4-67)
         s = self.scale()
 
         def across(k: int) -> bool:
             left, right = self.span(k)
-            return left - GRAB / s <= x <= right + GRAB / s
+            return left - GRAB / s <= at[k][0] <= right + GRAB / s
 
         order = [self.selected] + [k for k in range(len(self.windows)) if k != self.selected]
         for k in order:
             for j, row in enumerate(self.windows[k].splits):
-                if across(k) and abs(y - row) * s <= GRAB:
+                if across(k) and abs(at[k][1] - row) * s <= GRAB:
                     return ("split", j, k)
         for k in order:
             w = self.windows[k]
             for kind, row in (("top", w.top), ("bottom", w.bottom)):
-                if across(k) and abs(y - row) * s <= GRAB:
+                if across(k) and abs(at[k][1] - row) * s <= GRAB:
                     return (kind, k)
         for k in order:
             w, lanes = self.windows[k], self.lanes_of(k)
+            x, y = at[k]
             if not w.top <= y <= w.bottom:
                 continue
             for i in range(lanes.count):
@@ -206,7 +275,8 @@ class _BlotView(QWidget):
     CURSORS = {"split": Qt.CursorShape.SplitVCursor, "top": Qt.CursorShape.SizeVerCursor,
                "bottom": Qt.CursorShape.SizeVerCursor, "edge": Qt.CursorShape.SizeHorCursor,
                "first": Qt.CursorShape.SizeAllCursor, "last": Qt.CursorShape.SizeAllCursor,
-               "all": Qt.CursorShape.SizeAllCursor, "pan": Qt.CursorShape.OpenHandCursor}
+               "all": Qt.CursorShape.SizeAllCursor, "pan": Qt.CursorShape.OpenHandCursor,
+               "rotate": Qt.CursorShape.PointingHandCursor}
 
     def hit_mark(self, wx: float, wy: float) -> int | None:
         """The ladder mark whose line is under widget (wx, wy)."""
@@ -254,6 +324,8 @@ class _BlotView(QWidget):
                 self.committed(self.lanes, self.windows, self.selected)
         self.drag = {"what": what, "start": (p.x(), p.y()), "lanes": self.lanes, "windows": list(self.windows),
                      "centre": self.centre, "axis": None}
+        if what[0] == "rotate":
+            self.drag["pivot"] = tuple(self.centre_of(what[1]))
 
     def mouseMoveEvent(self, event) -> None:
         if self.image is None:
@@ -280,6 +352,14 @@ class _BlotView(QWidget):
             self.centre = (d["centre"][0] - dx, d["centre"][1] - dy)
             self.update()
             return
+        if what[0] == "rotate":  # turn the area about its middle by the turn of the mouse (§4-69)
+            k, (cx, cy) = what[1], self.to_widget(*d["pivot"])
+            turn = math.degrees(math.atan2(p.y() - cy, p.x() - cx) - math.atan2(d["start"][1] - cy, d["start"][0] - cx))
+            turn = (turn + 180) % 360 - 180
+            self.windows = list(d["windows"])
+            self.lanes, self.windows = self.releaned(k, d["windows"][k].angle + turn, d["lanes"], self.windows)
+            self.update()
+            return
         if what[0] in LANE_KINDS:
             if d["axis"] is None:
                 if max(abs(wdx), abs(wdy)) < AXIS_LOCK:
@@ -287,6 +367,10 @@ class _BlotView(QWidget):
                 d["axis"] = "x" if abs(wdx) >= abs(wdy) else "y"
             if d["axis"] == "y":
                 what = ("move", what[-1])
+        if self.windows[what[-1]].angle:  # the drag in the leaning window's own axes (§4-67)
+            sx, sy = self.to_image(*d["start"])
+            (ax, ay), (bx, by) = self.to_area(what[-1], sx, sy), self.to_area(what[-1], sx + dx, sy + dy)
+            dx, dy = bx - ax, by - ay
         try:
             self.lanes, self.windows = self._moved(what, d["lanes"], d["windows"], dx, dy)
         except ValueError:
@@ -332,8 +416,8 @@ class _BlotView(QWidget):
         if boxes[0][0] < 0 or boxes[-1][1] > w or top < 0 or bottom > h:
             raise ValueError("off the image")
         if len(windows) == 1:
-            return new_lanes, [wb.Window(list(win.names), top, bottom, splits)]
-        new_window = wb.Window(list(win.names), top, bottom, splits, None if new_lanes == lanes else new_lanes)
+            return new_lanes, [replace(win, top=top, bottom=bottom, splits=splits, lanes=None)]
+        new_window = replace(win, top=top, bottom=bottom, splits=splits, lanes=None if new_lanes == lanes else new_lanes)
         return lanes, [new_window if j == k else other for j, other in enumerate(windows)]
 
     def mouseReleaseEvent(self, event) -> None:
@@ -428,6 +512,43 @@ def marker_image(path: Path) -> Path | None:
     return None
 
 
+class _BlotList(QListWidget):
+    """The opened blots; while there are none, a soft "+" and "drop here / click to open", and a
+    click opens the file picker (§4-72)."""
+
+    def __init__(self, open_picker):
+        super().__init__()
+        self.open_picker = open_picker
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self.count():
+            return
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        colour = QColor(theme.TEXT_MUTED)
+        colour.setAlpha(150)
+        r = self.viewport().rect()
+        cx, cy = r.center().x(), r.center().y()
+        pen = QPen(colour, 3)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        arm = 16
+        painter.drawLine(cx - arm, cy - 26, cx + arm, cy - 26)
+        painter.drawLine(cx, cy - 26 - arm, cx, cy - 26 + arm)
+        painter.setPen(colour)
+        lines = r.adjusted(8, 0, -8, 0)
+        lines.setTop(cy + 2)
+        painter.drawText(lines, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop | Qt.TextFlag.TextWordWrap,
+                         i18n.tr("wb.drop.here"))
+
+    def mousePressEvent(self, event) -> None:
+        if not self.count() and event.button() == Qt.MouseButton.LeftButton:
+            self.open_picker()
+            return
+        super().mousePressEvent(event)
+
+
 class _Blot:
     """One opened blot: its lanes and one or more band windows, each of which may have its own
     lanes (§4-51; the lane count is the blot's)."""
@@ -504,6 +625,17 @@ class _Blot:
     def auto_display(self) -> None:
         self.set_display(*self.auto_range())
 
+    def area_blot(self, k: int | None = None) -> wb.Blot:
+        """The raw blot turned once by the blot's tilt plus window k's lean (§4-67): what that
+        window is measured, fitted and levelled on."""
+        lean = self.windows[self.selected if k is None else k].angle
+        if not lean:
+            return self.blot
+        total = round(self.angle + lean, 6)
+        if getattr(self, "_area", (None,))[0] != total:
+            self._area = (total, wb.turned(self.raw, total))
+        return self._area[1]
+
     def histogram(self) -> np.ndarray:
         """Counts of the (turned) blot's values in 256 bins over 0–65,535 (§4-63)."""
         if getattr(self, "_hist", (None,))[0] != self.angle:
@@ -549,7 +681,8 @@ class _Blot:
     def settings(self) -> dict:
         return {"path": str(self.path), "name": self.name, "same_gel": self.same_gel, "angle": self.angle,
                 "lanes": asdict(self.lanes),  # a window's "lanes" only when it has its own (§4-51)
-                "windows": [{k: v for k, v in asdict(w).items() if k != "lanes" or v} for w in self.windows],
+                "windows": [{k: v for k, v in asdict(w).items() if k not in ("lanes", "angle") or v}  # §4-51, §4-67
+                            for w in self.windows],
                 "ladder": [list(m) for m in self.ladder]}
 
 
@@ -586,9 +719,15 @@ class WBWindow(QMainWindow):
         split.addWidget(self._build_settings())
         split.setSizes([260, 640, 480])
         self.setCentralWidget(split)
+        self.setAcceptDrops(True)  # blots dropped from the file explorer open (§4-71)
         self.saved_label = QLabel()
         self.saved_label.setObjectName("muted")
         self.statusBar().addPermanentWidget(self.saved_label)
+        # A wheel passing over a number box or a picker scrolls the panel; only a clicked one
+        # (focused) takes the wheel (§4-69): scrolling down used to turn the tilt on the way.
+        for box in (*self.findChildren(QAbstractSpinBox), *self.findChildren(QComboBox)):
+            box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            box.installEventFilter(self)
         # No number box is squeezed below its widest value (§4-46 UI8): long buttons on the same
         # row would otherwise take the room and hide the digits in a narrow window.
         for spin in self.findChildren(QAbstractSpinBox):
@@ -624,7 +763,8 @@ class WBWindow(QMainWindow):
         row.addWidget(self.close_button)
         row.addWidget(self.close_all_button)
         body.addLayout(row)
-        self.blot_list = QListWidget()
+        self.blot_list = _BlotList(self._ask_open)
+        self.blot_list.setToolTip(i18n.tr("wb.drop.tip"))
         self.blot_list.currentRowChanged.connect(lambda _: self._load_widgets())
         body.addWidget(self.blot_list, 1)
         row = QHBoxLayout()
@@ -738,6 +878,27 @@ class WBWindow(QMainWindow):
             self.statusBar().showMessage(i18n.tr("wb.tilt_none"), 10000)
             return
         self.tilt_spin.setValue(float(np.clip(b.angle + left, -20, 20)))
+
+    def set_lean(self, angle: float) -> None:
+        """The picked band area's own lean (§4-67); its middle stays where it shows (§4-69)."""
+        b = self.current()
+        if b is None or round(float(angle), 2) == b.window.angle:
+            return
+        b.lanes, b.windows = self.view.releaned(b.selected, float(angle), b.lanes, b.windows)
+        self._load_widgets()
+        self.recompute()
+        self._make_figure()
+
+    def auto_lean(self) -> None:
+        """Add the tilt still left in the picked band area's bands to its own lean (§4-67)."""
+        b = self.current()
+        if b is None:
+            return
+        left = wbfigure.level_angle(b.area_blot().image, b.lanes_of(), b.window)
+        if left == 0:
+            self.statusBar().showMessage(i18n.tr("wb.tilt_none"), 10000)
+            return
+        self.win_lean.setValue(float(np.clip(b.window.angle + left, -20, 20)))
 
     def _tilt_points_mode(self, on: bool) -> None:
         if on and self.level_points.isChecked():
@@ -859,6 +1020,25 @@ class WBWindow(QMainWindow):
         row = QHBoxLayout()
         self.win_top = self._spin(row, "wb.top")
         self.win_bottom = self._spin(row, "wb.bottom")
+        body.addLayout(row)
+        # This band area's own lean beyond the blot's tilt (§4-67): a strip cut and laid down crooked.
+        row = QHBoxLayout()
+        lean_label = QLabel()
+        i18n.bind(lean_label, "wb.lean")
+        lean_label.setToolTip(i18n.tr("wb.lean.tip"))
+        self.win_lean = QDoubleSpinBox()
+        self.win_lean.setRange(-20, 20)
+        self.win_lean.setDecimals(2)
+        self.win_lean.setSingleStep(.25)
+        self.win_lean.setSuffix(" °")
+        self.win_lean.setKeyboardTracking(False)
+        self.win_lean.setToolTip(i18n.tr("wb.lean.tip"))
+        self.win_lean.valueChanged.connect(self.set_lean)
+        self.win_lean_auto = widgets.button("action", "wb.tilt_auto", tooltip=i18n.tr("wb.lean_auto.tip"))
+        self.win_lean_auto.clicked.connect(self.auto_lean)
+        row.addWidget(lean_label)
+        row.addWidget(self.win_lean, 1)
+        row.addWidget(self.win_lean_auto)
         body.addLayout(row)
         hint = QLabel()
         hint.setObjectName("muted")
@@ -1063,7 +1243,8 @@ class WBWindow(QMainWindow):
         what its own window still leans (§4-29, §4-43)."""
         angle = blot.figure[k]["angle"]
         if angle is None:
-            angle = round(blot.angle + wbfigure.level_angle(blot.blot.image, blot.lanes_of(k), blot.windows[k]), 2)
+            base = blot.angle + blot.windows[k].angle  # the frame its rows are in (§4-67)
+            angle = round(base + wbfigure.level_angle(blot.area_blot(k).image, blot.lanes_of(k), blot.windows[k]), 2)
         return angle
 
     def strip_contrast(self, blot, k: int) -> tuple[float, float]:
@@ -1404,7 +1585,7 @@ class WBWindow(QMainWindow):
                                       asdict(blot.windows[k]), *self.strip_contrast(blot, k),
                                       meta["label"] or ", ".join(blot.windows[k].names), meta["kda"],
                                       auto=meta["angle"] is None, ticks=[list(m) for m in blot.ladder if m[2]],
-                                      extend=self.figure_layout().nearest_ladder, base=blot.angle))
+                                      extend=self.figure_layout().nearest_ladder, base=blot.angle + blot.windows[k].angle))
         return out
 
     def lane_labels(self) -> list[str]:
@@ -1442,7 +1623,7 @@ class WBWindow(QMainWindow):
                 continue
             lo, hi = self.strip_contrast(blot, k)
             s = wbfigure.Strip(str(blot.path), self.strip_angle(blot, k), asdict(blot.lanes_of(k)),
-                               asdict(blot.windows[k]), lo, hi, base=blot.angle)
+                               asdict(blot.windows[k]), lo, hi, base=blot.angle + blot.windows[k].angle)
             top = float(s.cut(blot.raw.image)[0].max())
             if top > lo:
                 blot.figure[k].update(lo=float(lo), hi=float(np.nextafter(top, np.inf)))
@@ -1538,6 +1719,10 @@ class WBWindow(QMainWindow):
         self.samples.editItem(self.samples.item(0, 0))
 
     def eventFilter(self, obj, event) -> bool:
+        if event.type() == event.Type.Wheel and isinstance(obj, (QAbstractSpinBox, QComboBox)) and not obj.hasFocus():
+            if self.settings_scroll.isAncestorOf(obj):  # the panel scrolls instead (§4-69)
+                QApplication.sendEvent(self.settings_scroll.verticalScrollBar(), event)
+            return True
         if obj is getattr(self, "graph_view", None) and event.type() == event.Type.MouseButtonDblClick:
             self.edit_lane_names()
             return True
@@ -1556,6 +1741,48 @@ class WBWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, i18n.tr("wb.open"), "", "TIFF (*.tif *.tiff);;All files (*)")
         for p in paths:
             self.open_blot(Path(p))
+
+    # ---- dropping files on the window (§4-71) -------------------------------------------------
+
+    @staticmethod
+    def dropped_paths(mime) -> list[Path]:
+        """The local files of a drop; a folder gives the TIFs directly inside it, by name."""
+        out = []
+        for url in mime.urls() if mime.hasUrls() else []:
+            if not url.isLocalFile():
+                continue
+            path = Path(url.toLocalFile())
+            if path.is_dir():
+                out += sorted(q for q in path.iterdir() if q.is_file() and q.suffix.lower() in (".tif", ".tiff"))
+            else:
+                out.append(path)
+        return out
+
+    def dragEnterEvent(self, event) -> None:
+        if self.dropped_paths(event.mimeData()):
+            event.acceptProposedAction()
+            self.blot_list.setStyleSheet(f"QListWidget {{ border: 2px solid {theme.ACCENT}; }}")
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if self.dropped_paths(event.mimeData()):
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event) -> None:
+        self.blot_list.setStyleSheet("")
+
+    def dropEvent(self, event) -> None:
+        """Each dropped file opens as "Open blots…" would; the ones refused say why in the status bar."""
+        self.blot_list.setStyleSheet("")
+        paths = self.dropped_paths(event.mimeData())
+        if not paths:
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        refused = [p.name for p in paths if not self.open_blot(p)]
+        if len(refused) > 1:
+            self.statusBar().showMessage(i18n.tr("wb.drop.refused").format(names=", ".join(refused)), 15000)
 
     def open_blot(self, path: Path) -> bool:
         """Add a raw blot; anything else is refused with the reason in the status bar."""
@@ -1699,7 +1926,8 @@ class WBWindow(QMainWindow):
         last = b.windows[-1]
         height = last.bottom - last.top
         top = min(last.bottom + 20, h - height)
-        b.windows.append(wb.Window([f"band {len(b.windows) + 1}"], max(0, top), max(0, top) + height, lanes=last.lanes))
+        b.windows.append(wb.Window([f"band {len(b.windows) + 1}"], max(0, top), max(0, top) + height, lanes=last.lanes,
+                                   angle=last.angle))
         b.selected = len(b.windows) - 1
         self._load_widgets()
         self.recompute()
@@ -1727,14 +1955,15 @@ class WBWindow(QMainWindow):
         if b is None:
             return False
         try:
-            lanes, top, bottom = wb.fit(b.blot.image, x, y, b.lanes.count, b.lanes_of())
+            x, y = self.view.to_area(b.selected, x, y)  # a leaning area fits in its own frame (§4-67)
+            lanes, top, bottom = wb.fit(b.area_blot().image, x, y, b.lanes.count, b.lanes_of())
         except ValueError as exc:
             self.statusBar().showMessage(i18n.tr("wb.fit.none", reason=str(exc)), 10000)
             return False
         old = b.window
         keep = [s for s in old.splits if top + wb.END_ROWS < s < bottom - wb.END_ROWS]
         names = old.names if len(keep) == len(old.splits) else old.names[:len(keep) + 1]
-        b.window = wb.Window(list(names), top, bottom, keep, old.lanes)
+        b.window = replace(old, names=list(names), top=top, bottom=bottom, splits=keep)
         b.set_lanes(lanes)  # the clicked window's lanes only (§4-51)
         self.fit_button.setChecked(False)
         self._load_widgets()
@@ -1753,7 +1982,7 @@ class WBWindow(QMainWindow):
         b = self.current()
         widgets_ = (self.lane_count, self.lane_width, self.lane_first, self.lane_last, self.win_top, self.win_bottom,
                     self.name_edit, self.same_gel_box, self.win_names, self.win_bands, self.win_pick,
-                    self.display_lo, self.display_hi, self.tilt_spin)
+                    self.display_lo, self.display_hi, self.tilt_spin, self.win_lean)
         for w in widgets_:
             w.blockSignals(True)
         if b is not None:
@@ -1776,6 +2005,7 @@ class WBWindow(QMainWindow):
             self.display_hist.set_data(b.histogram(), b.blot.saturation)
             self.display_hist.set_range(*b.display)
             self.tilt_spin.setValue(b.angle)
+            self.win_lean.setValue(b.window.angle)
         self.win_remove.setEnabled(b is not None and len(b.windows) > 1)
         self.close_button.setEnabled(b is not None)
         for button in (self.display_auto, self.display_full, self.display_hist):
@@ -1783,7 +2013,7 @@ class WBWindow(QMainWindow):
         if b is None:
             self.display_hist.set_data(np.zeros(256), 65535.0)
         self.close_all_button.setEnabled(bool(self.blots))
-        for w in (self.tilt_spin, self.tilt_auto, self.tilt_points):
+        for w in (self.tilt_spin, self.tilt_auto, self.tilt_points, self.win_lean, self.win_lean_auto):
             w.setEnabled(b is not None)
         has_marker = b is not None and b.marker_path is not None
         self.marker_toggle.setEnabled(has_marker)
@@ -1815,7 +2045,7 @@ class WBWindow(QMainWindow):
         if len(names) != n:
             names = [f"band {k + 1}" for k in range(n)] if n > 1 else (names[:1] or ["band"])
         try:
-            window = wb.Window(names, top, bottom, splits, b.window.lanes)
+            window = wb.Window(names, top, bottom, splits, b.window.lanes, b.window.angle)
         except ValueError:
             self.statusBar().showMessage(i18n.tr("wb.window_invalid"), 8000)
             return
@@ -2173,6 +2403,7 @@ class WBWindow(QMainWindow):
         self.setWindowTitle(i18n.tr("wb.title"))
         self._sample_headers()
         self._result_headers()
+        self.blot_list.viewport().update()  # the empty list's hint (§4-72)
         self.graph_view.setToolTip(i18n.tr("wb.graph_hint"))
         self.warning_label.setText("\n".join(warning_text(w) for w in self.warnings))
         self._refresh_strip_texts()

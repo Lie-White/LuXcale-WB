@@ -3,6 +3,23 @@
 Versions are the installer's (`LuXcale-<version>-setup.exe`).
 Every saved result's `settings.json` records the `app_version` that made it.
 
+## 1.0.4 — 2026-11-03
+
+### Quantification
+- **Tilt per band area:** each band area (row of boxes) can lean on its own, on top of the blot's
+  tilt, for a strip that lies crooked; it is measured on the raw image turned once by both angles
+  - "Area tilt" box and "Level" in ③, or drag the round handle at the right end of the picked
+    area: the row turns about its own middle
+- **Auto-detect:** finds the lanes when band widths differ from lane to lane, and no longer loses
+  a very strong (saturated) lane
+
+### Screen
+- **Drag and drop:** drop TIF files or a folder anywhere on the window to open them; the empty
+  blot list shows a "+" with "drop blot TIFs here, or click to open"
+- **Wheel:** number boxes and pickers change with the mouse wheel only after you click them;
+  otherwise the wheel scrolls the panel
+- **Band area names** sit above the boxes, clear of the rotate handle
+
 ## 1.0.3 — 2026-11-02
 
 ### Quantification

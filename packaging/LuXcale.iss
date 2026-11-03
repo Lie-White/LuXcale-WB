@@ -1,7 +1,7 @@
 ; Installer for the lab release (docs/PLAN.md §4-41): per user, no administrator rights.
 ; Built by packaging\build_release.py after PyInstaller has filled output\dist\LuXcale.
 
-#define AppVersion "1.0.3"
+#define AppVersion "1.0.4"
 
 [Setup]
 AppId=LuXcale

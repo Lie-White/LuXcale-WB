@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import sys
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 # Keep every settings and cache file inside the project (C:\Imaging\tools\...) instead of the
 # user's AppData, unless the caller chose a location. This must run before matplotlib, napari or

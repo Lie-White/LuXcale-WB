@@ -3,7 +3,7 @@
   tools\\uv.cmd run --no-sync python packaging\\build_release.py
 
 Needs Inno Setup's ISCC.exe in tools\\innosetup (portable install). Output:
-output\\installer\\LuXcale-1.0.3-setup.exe
+output\\installer\\LuXcale-1.0.4-setup.exe
 """
 
 from importlib import metadata
@@ -70,7 +70,7 @@ def main() -> int:
         print(f"no {ISCC}: install Inno Setup there (portable) to make setup.exe")
         return 1
     subprocess.run([str(ISCC), str(ROOT / "packaging" / "LuXcale.iss")], check=True)
-    print(ROOT / "output" / "installer" / "LuXcale-1.0.3-setup.exe")
+    print(ROOT / "output" / "installer" / "LuXcale-1.0.4-setup.exe")
     return 0
 
 

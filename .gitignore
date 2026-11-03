@@ -26,3 +26,5 @@ __pycache__/
 /tools/innosetup/
 # Public repository written by scripts/export_public.py (its own history)
 /public/
+# Demo blots written by scripts/make_demo.py (made again when needed)
+/demo/

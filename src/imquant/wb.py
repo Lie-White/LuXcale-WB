@@ -86,12 +86,14 @@ class Lanes:
 class Window:
     """Rows [top, bottom) holding one band, or several split at `splits` (rows, ascending);
     `names` has one name per band (len(splits) + 1). `lanes`: this window's own lane boxes
-    (§4-51), None = the blot's."""
+    (§4-51), None = the blot's. `angle`: degrees this band area leans beyond the blot's tilt
+    (§4-67); its rows, lanes and splits are in the raw image turned by the sum."""
     names: list[str]
     top: int
     bottom: int
     splits: list[int] = field(default_factory=list)
     lanes: Lanes | None = None
+    angle: float = 0.0
 
     def __post_init__(self) -> None:
         if isinstance(self.lanes, dict):
@@ -220,6 +222,21 @@ def normalise(target: list[dict], loading: list[dict], band: str, loading_band: 
     return rows, warnings
 
 
+def measure_blot(raw: Blot, angle: float, lanes: Lanes, windows: list[Window], background: str = "ends") -> list[dict]:
+    """`measure` on the raw blot levelled by `angle` (§4-43); a window that leans further (§4-67)
+    is measured on the raw image turned once by the sum, never turned twice. Rows come lane by
+    lane, windows in their order, as `measure` gives them."""
+    if all(w.angle == 0 for w in windows):
+        return measure(turned(raw, angle), lanes, windows, background)
+    images: dict[float, Blot] = {}
+    each = []
+    for w in windows:
+        if w.angle not in images:
+            images[w.angle] = turned(raw, angle + w.angle)
+        each.append(measure(images[w.angle], lanes, [w], background))
+    return [r for i in range(1, lanes.count + 1) for rows in each for r in rows if r["lane"] == i]
+
+
 def windows_of(blot: dict) -> list[Window]:
     """A blot's band windows: `windows` (§4-24), or the single `window` of older settings (§4-22)."""
     return [Window(**w) for w in blot["windows"]] if "windows" in blot else [Window(**blot["window"])]
@@ -244,8 +261,8 @@ def run(settings: dict) -> tuple[list[dict], list[str]]:
     def rows_of(i: int) -> list[dict]:
         if i not in measured:
             b = blots[i]
-            raw = turned(read_blot(Path(b["path"])), b.get("angle", 0.0))  # level first (§4-43)
-            measured[i] = measure(raw, Lanes(**b["lanes"]), windows_of(b), settings.get("background", "ends"))
+            measured[i] = measure_blot(read_blot(Path(b["path"])), b.get("angle", 0.0), Lanes(**b["lanes"]),
+                                       windows_of(b), settings.get("background", "ends"))
         return measured[i]
 
     t = settings["target"]
@@ -343,8 +360,14 @@ def fit(image: np.ndarray, x: float, y: float, count: int, current: Lanes | None
     # threshold. Separate runs of signal are lanes: their centres give the spacing and phase.
     # One run (all lanes touching; between unequal neighbours there is often no valley at
     # all) is split evenly into `count` lanes.
-    outside = np.concatenate([smooth[max(0, top - 8):max(0, top - 2)], smooth[bottom + 2:bottom + 8]])
-    cols = smooth[top:bottom].sum(axis=0) - (bottom - top) * outside.mean(axis=0)
+    # Each column's background: the lowest of 2–8 and 8–16 rows above and below (§4-68). A strong
+    # band's tails reach the nearer rows, a neighbouring band the farther ones, and a band just
+    # outside sits on one side only; one of the four is clear of all of them.
+    blocks = (smooth[max(0, top - 8):max(0, top - 2)], smooth[bottom + 2:bottom + 8],
+              smooth[max(0, top - 16):max(0, top - 8)], smooth[bottom + 8:bottom + 16])
+    sides = [part.mean(axis=0) for part in blocks if len(part)]
+    outside = np.min(sides, axis=0) if sides else np.zeros(w)
+    cols = smooth[top:bottom].sum(axis=0) - (bottom - top) * outside
     labels, n = ndimage.label(cols > .2 * cols.max())
     runs = [np.flatnonzero(labels == k + 1) for k in range(n)]
     runs = [r for r in runs if len(r) >= 5]
@@ -355,24 +378,29 @@ def fit(image: np.ndarray, x: float, y: float, count: int, current: Lanes | None
         raise ValueError("no band where you clicked")
     left, right = runs[0][0], runs[-1][-1] + 1
     starts = np.array([r[0] for r in runs], np.float64)
+    centres = np.array([(r[0] + r[-1]) / 2 for r in runs], np.float64)
     lengths = np.array([len(r) for r in runs], np.float64)
     band = lengths.min()  # one lane's band width: the narrowest run
     best = None
-    if len(runs) >= 2:
-        # A run holds k touching lanes: length ≈ k·step − gap, gap = step − band. Every run
-        # starts on the lane grid. Try each spacing; keep the largest one that fits (half the
-        # spacing fits too, with every other lane empty).
+    # A run holds k touching lanes: length ≈ k·step − gap, gap = step − band. Every run starts on
+    # the lane grid. Try each spacing; keep the largest one that fits (half the spacing fits too,
+    # with every other lane empty). When none does because the bands differ in width, which moves
+    # the starts, the runs' middles (the middle of their k lanes) are used instead (§4-68).
+    for anchor in ("start", "middle"):
+        if len(runs) < 2 or best is not None:
+            break
         for step in np.arange(band + 2, right - left + 1, .5):
             k = np.maximum(1, np.round((lengths + step - band) / step))
-            slot = np.round((starts - starts[0]) / step)
+            lane0 = starts + band / 2 if anchor == "start" else centres - (k - 1) / 2 * step  # first lane centre
+            slot = np.round((lane0 - lane0[0]) / step)
             lit = int(slot[-1] + k[-1])
             if lit > max(count, len(runs)) or np.any(np.diff(slot) < k[:-1]):
                 continue
-            if np.abs(starts - starts[0] - slot * step).max() <= max(3.0, .06 * step):
-                best = (step, slot, lit)
+            if np.abs(lane0 - lane0[0] - slot * step).max() <= max(3.0, .06 * step):
+                best = (step, slot, lit, lane0)
     if best is not None:
-        step, slot, lit = best
-        first = float(np.mean(starts - slot * step)) + band / 2
+        step, slot, lit, lane0 = best
+        first = float(np.mean(lane0 - slot * step))
     else:
         step = (right - left) / count
         first, lit = left + step / 2, count
