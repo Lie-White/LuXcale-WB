@@ -12,13 +12,29 @@ from the raw image to a normalised result, a graph and a publication figure. Win
 
 The screen contrast only changes what you see. Numbers always come from the raw image.
 
-**Download:** get `LuXcale-<version>-setup.exe` from [Releases](../../releases/latest) (right side of this page).
+## ⬇️ Download (latest: 1.0.4)
 
-> **다운로드:** 이 페이지 오른쪽의 [Releases](../../releases/latest)에서 `LuXcale-<버전>-setup.exe`를 받아 실행하세요.
+**[Download LuXcale-WB-1.0.4_setup.exe](https://github.com/Lie-White/LuXcale-WB/releases/download/v1.0.4/LuXcale-WB-1.0.4_setup.exe)**
+
+1. Click the link above, or click **Releases** on the right side of this page and open **LuXcale-WB 1.0.4 (Windows)**.
+2. Under **Assets**, click **`LuXcale-WB-1.0.4_setup.exe`**. (Don't take "Source code"; that is the code, not the program.)
+3. Run the downloaded file. No administrator rights are needed.
+   If Windows shows "Windows protected your PC", click **More info → Run anyway**.
+
+> ### ⬇️ 다운로드 (최신 1.0.4)
 >
+> **[LuXcale-WB-1.0.4_setup.exe 바로 받기](https://github.com/Lie-White/LuXcale-WB/releases/download/v1.0.4/LuXcale-WB-1.0.4_setup.exe)**
+>
+> 1. 위 링크를 누르거나, 이 페이지 **오른쪽의 Releases**에서 **LuXcale-WB 1.0.4 (Windows)**를 엽니다.
+> 2. 아래쪽 **Assets**에서 **`LuXcale-WB-1.0.4_setup.exe`**를 누르면 받아집니다. ("Source code"는 코드 파일이라 받을 필요 없어요.)
+> 3. 받은 파일을 실행하면 설치됩니다. 관리자 권한은 필요 없어요.
+>    "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
+>
+> 이미 예전 버전을 쓰고 계시면 새 설치 파일을 그대로 덮어 설치하면 됩니다. 설정과 저장한 결과는 남아요.
+
 > **한국어 요약:** 웨스턴 블롯 원본 TIFF로 밴드를 정량해서 정규화 결과, 그래프, 논문용 그림까지 만드는 Windows 프로그램입니다.
 > 화면 밝기는 화면에만 적용되고, 숫자는 항상 원본 이미지에서 계산합니다. 자동으로 정해진 값은 꼭 직접 확인하고 쓰세요.
-> 새 버전은 새 설치 파일을 기존 버전 위에 그대로 설치하면 되고, 설정과 저장한 결과는 남습니다. 버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)에 있습니다.
+> 버전별 변경 내용은 [CHANGELOG.md](CHANGELOG.md)에 있습니다.
 > Test video : https://youtu.be/RjKfseLv0yM
 
 
@@ -38,7 +54,7 @@ The screen contrast only changes what you see. Numbers always come from the raw 
 
 ## Install
 
-Run `LuXcale-<version>-setup.exe`. It installs for your Windows user without administrator rights.
+Run the setup file from [Releases](../../releases/latest) (`LuXcale-WB-<version>_setup.exe`). It installs for your Windows user without administrator rights.
 
 ## Versions and updating
 
