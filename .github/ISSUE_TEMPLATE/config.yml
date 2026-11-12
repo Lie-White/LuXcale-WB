@@ -1,1 +1,5 @@
 blank_issues_enabled: true
+contact_links:
+  - name: Questions and first impressions / 질문·사용 후기
+    url: https://github.com/Lie-White/LuXcale-WB/discussions
+    about: How do I…? Does it work with my imager? Ask in Discussions. / 사용법 질문이나 후기는 Discussions에 남겨 주세요.

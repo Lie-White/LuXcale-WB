@@ -89,13 +89,16 @@ used to check the measurements and statistics.
 
 ## Feedback
 
+- **Questions, first impressions, which imager you used:** say hello in [Discussions](../../discussions).
+  No form, no question is too small.
 - **Bugs and odd results:** open an [issue](../../issues/new/choose) with the *Bug report* form
   (version, imager, the steps, what you expected and what happened).
 - **Ideas:** use the *Feature request* form.
 - **Blot files:** do not attach unpublished data to a public issue; say in the form that you can
   share one, and we will arrange a private copy.
 
-**피드백:** 버그·이상한 결과는 [Issues](../../issues/new/choose)의 *버그 신고* 양식으로, 원하는 기능은 *기능 제안* 양식으로 남겨 주세요.
+**피드백:** 사용법 질문, 써 본 후기, 어떤 이미저로 써 봤는지는 [Discussions](../../discussions)에 편하게 남겨 주세요. 양식 없이 짧게 써도 돼요.
+버그·이상한 결과는 [Issues](../../issues/new/choose)의 *버그 신고* 양식으로, 원하는 기능은 *기능 제안* 양식으로 남겨 주세요.
 미발표 블롯 파일은 공개 이슈에 올리지 말고, 공유 가능하다고 체크해 주시면 따로 받을게요.
 
 ## No warranty
