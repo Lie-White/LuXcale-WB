@@ -12,21 +12,21 @@ from the raw image to a normalised result, a graph and a publication figure. Win
 
 The screen contrast only changes what you see. Numbers always come from the raw image.
 
-## ⬇️ Download (latest: 1.0.4)
+## ⬇️ Download
 
-**[Download LuXcale-WB-1.0.4_setup.exe](https://github.com/Lie-White/LuXcale-WB/releases/download/v1.0.4/LuXcale-WB-1.0.4_setup.exe)**
+**[Go to the latest version](../../releases/latest)**
 
-1. Click the link above, or click **Releases** on the right side of this page and open **LuXcale-WB 1.0.4 (Windows)**.
-2. Under **Assets**, click **`LuXcale-WB-1.0.4_setup.exe`**. (Don't take "Source code"; that is the code, not the program.)
+1. Click the link above, or click **Releases** on the right side of this page and open the newest one (marked **Latest**).
+2. Under **Assets**, click **`LuXcale-WB-<version>_setup.exe`**. (Don't take "Source code"; that is the code, not the program.)
 3. Run the downloaded file. No administrator rights are needed.
    If Windows shows "Windows protected your PC", click **More info → Run anyway**.
 
-> ### ⬇️ 다운로드 (최신 1.0.4)
+> ### ⬇️ 다운로드
 >
-> **[LuXcale-WB-1.0.4_setup.exe 바로 받기](https://github.com/Lie-White/LuXcale-WB/releases/download/v1.0.4/LuXcale-WB-1.0.4_setup.exe)**
+> **[최신 버전 받으러 가기](../../releases/latest)**
 >
-> 1. 위 링크를 누르거나, 이 페이지 **오른쪽의 Releases**에서 **LuXcale-WB 1.0.4 (Windows)**를 엽니다.
-> 2. 아래쪽 **Assets**에서 **`LuXcale-WB-1.0.4_setup.exe`**를 누르면 받아집니다. ("Source code"는 코드 파일이라 받을 필요 없어요.)
+> 1. 위 링크를 누르거나, 이 페이지 **오른쪽의 Releases**에서 가장 위(**Latest** 표시)를 엽니다.
+> 2. 아래쪽 **Assets**에서 **`LuXcale-WB-<버전>_setup.exe`**를 누르면 받아집니다. ("Source code"는 코드 파일이라 받을 필요 없어요.)
 > 3. 받은 파일을 실행하면 설치됩니다. 관리자 권한은 필요 없어요.
 >    "Windows의 PC 보호" 창이 뜨면 **추가 정보 → 실행**을 누르세요.
 >
